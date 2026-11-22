@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   Eye,
-  Layers,
   Plus,
   Printer,
   RotateCcw,
@@ -16,6 +15,7 @@ import {
   Send,
   Trash2,
   UserPlus,
+  X,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { CustomerFormModal } from '../components/CustomerFormModal';
@@ -26,7 +26,6 @@ import {
   DEFAULT_DELIVERABLES,
   DEFAULT_UNIT_TYPES,
   INDIAN_STATES,
-  STRUCTURED_VIBRATION_SCOPE_PRESET,
 } from '../constants/defaults';
 import { useAppData } from '../context/AppDataContext';
 import {
@@ -117,6 +116,12 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
   const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
+
+  const [saveTplModalOpen, setSaveTplModalOpen] = useState(false);
+  const [newTplName, setNewTplName] = useState('');
+  const [newTplPrice, setNewTplPrice] = useState<number>(0);
+  const [newTplUnitType, setNewTplUnitType] = useState('Per Day');
+  const [savingTpl, setSavingTpl] = useState(false);
 
   const [savingQuote, setSavingQuote] = useState(false);
   const [pendingOverwriteStatus, setPendingOverwriteStatus] = useState<QuotationStatus | null>(
@@ -458,19 +463,81 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
     }
   };
 
-  // --- Scope of Work Actions ---
+  // --- Scope of Work Actions (Structured Multi-Stage) ---
   const addServiceFromLibrary = (tplId: string) => {
     const tpl = serviceLibrary.find((s) => s.id === tplId);
     if (!tpl) return;
-    const newSvc: QuotationServiceItem = {
+
+    const templateStages =
+      tpl.stages && tpl.stages.length > 0
+        ? tpl.stages
+        : [
+            {
+              id: generateSafeId('stage'),
+              title: tpl.name,
+              description: tpl.description,
+              scopePoints: tpl.scopePoints,
+            },
+          ];
+
+    const newStageItems: QuotationServiceItem[] = templateStages.map((st) => ({
       id: generateSafeId('qsvc'),
       serviceTemplateId: tpl.id,
-      title: tpl.name,
-      description: tpl.description,
-      scopePoints: [...tpl.scopePoints],
-    };
-    setQuoteServices((prev) => [...prev, newSvc]);
+      title: st.title,
+      description: st.description || '',
+      scopePoints: st.scopePoints.length > 0 ? [...st.scopePoints] : [''],
+    }));
 
+    // Update Scope Overview (set if empty; append cleanly if combining multiple services)
+    if (tpl.description.trim()) {
+      setScopeOverview((prev) => {
+        const trimmed = prev.trim();
+        if (!trimmed) return tpl.description.trim();
+        if (trimmed.includes(tpl.description.trim())) return trimmed;
+        return `${trimmed}\n${tpl.description.trim()}`;
+      });
+    }
+
+    // Load all structured stages for this service
+    setQuoteServices((prev) => [...prev, ...newStageItems]);
+
+    // Populate Deliverables (replace untouched generic defaults or merge unique items)
+    if (tpl.deliverables && tpl.deliverables.length > 0) {
+      setDeliverables((prev) => {
+        const isStillDefault =
+          quoteServices.length === 0 &&
+          prev.length === DEFAULT_DELIVERABLES.length &&
+          prev.every((v, i) => v === DEFAULT_DELIVERABLES[i]);
+        if (isStillDefault || prev.every((v) => !v.trim())) {
+          return [...tpl.deliverables!];
+        }
+        const merged = [...prev.filter((v) => v.trim())];
+        tpl.deliverables!.forEach((item) => {
+          if (!merged.includes(item)) merged.push(item);
+        });
+        return merged;
+      });
+    }
+
+    // Populate Customer-Side Arrangements (replace untouched generic defaults or merge unique items)
+    if (tpl.customerArrangements && tpl.customerArrangements.length > 0) {
+      setCustomerArrangements((prev) => {
+        const isStillDefault =
+          quoteServices.length === 0 &&
+          prev.length === DEFAULT_CUSTOMER_ARRANGEMENTS.length &&
+          prev.every((v, i) => v === DEFAULT_CUSTOMER_ARRANGEMENTS[i]);
+        if (isStillDefault || prev.every((v) => !v.trim())) {
+          return [...tpl.customerArrangements!];
+        }
+        const merged = [...prev.filter((v) => v.trim())];
+        tpl.customerArrangements!.forEach((item) => {
+          if (!merged.includes(item)) merged.push(item);
+        });
+        return merged;
+      });
+    }
+
+    // Add corresponding pricing row in Section E
     setPricingItems((prev) => {
       const hasSingleEmpty =
         prev.length === 1 && !prev[0].description.trim() && prev[0].unitPrice === 0;
@@ -487,27 +554,26 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
       );
       return hasSingleEmpty ? [newRow] : [...prev, newRow];
     });
+
+    pushToast({
+      type: 'success',
+      title: `Loaded ${tpl.name}`,
+      description: `Added ${newStageItems.length} structured stage${
+        newStageItems.length === 1 ? '' : 's'
+      }, deliverables, arrangements, and pricing item.`,
+    });
     setSelectedLibraryServiceId('');
   };
 
-  const loadStructuredScopePreset = () => {
-    setScopeOverview(STRUCTURED_VIBRATION_SCOPE_PRESET.scopeOverview);
-    setQuoteServices(
-      STRUCTURED_VIBRATION_SCOPE_PRESET.services.map((s) => ({
-        id: generateSafeId('qsvc'),
-        title: s.title,
-        description: s.description,
-        scopePoints: [...s.scopePoints],
-      }))
-    );
-    pushToast({
-      type: 'success',
-      title: 'Structured scope loaded',
-      description: 'Added 4 numbered stages (01–04). Edit any title, description, or bullet point.',
-    });
-  };
-
-  const addCustomService = () => {
+  const addCustomStage = () => {
+    if (quoteServices.length >= 30) {
+      pushToast({
+        type: 'info',
+        title: 'Stage limit reached',
+        description: 'A quotation supports up to 30 scope stages.',
+      });
+      return;
+    }
     setQuoteServices((prev) => [
       ...prev,
       {
@@ -552,38 +618,60 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
     setQuoteServices(next);
   };
 
-  const saveCustomServiceToLibrary = async (svc: QuotationServiceItem) => {
-    if (!svc.title.trim()) {
+  const openSaveScopeTemplateModal = () => {
+    if (quoteServices.length === 0) {
       pushToast({
         type: 'error',
-        title: 'Scope title required',
-        description: 'Enter a scope title before saving to the Service Library.',
+        title: 'No scope stages to save',
+        description: 'Add at least one structured stage before saving as a reusable service template.',
       });
       return;
     }
+    const firstPricing = pricingItems.find((p) => p.description.trim());
+    setNewTplName(firstPricing?.description.trim() || subject.trim() || '');
+    setNewTplPrice(firstPricing?.unitPrice || 0);
+    setNewTplUnitType(firstPricing?.unitType || 'Per Day');
+    setSaveTplModalOpen(true);
+  };
+
+  const handleSaveCurrentScopeAsTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTplName.trim()) return;
+    setSavingTpl(true);
     try {
-      const matchingPrice = pricingItems.find(
-        (p) => p.description.trim().toLowerCase() === svc.title.trim().toLowerCase()
-      );
+      const stages = quoteServices.slice(0, 20).map((s, idx) => ({
+        id: generateSafeId('stage'),
+        title: s.title.trim() || `Stage ${idx + 1}`,
+        description: (s.description || '').trim(),
+        scopePoints: s.scopePoints.map((p) => p.trim()).filter(Boolean),
+      }));
       const payload: Omit<ServiceTemplate, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'> = {
-        name: svc.title.trim(),
-        description: svc.description || '',
-        scopePoints: svc.scopePoints.map((p) => p.trim()).filter(Boolean),
-        defaultPrice: matchingPrice?.unitPrice || 0,
-        unitType: matchingPrice?.unitType || 'Per Job',
+        name: newTplName.trim(),
+        description: scopeOverview.trim(),
+        stages,
+        deliverables: deliverables.map((d) => d.trim()).filter(Boolean),
+        customerArrangements: customerArrangements.map((c) => c.trim()).filter(Boolean),
+        scopePoints: stages.flatMap((st) => st.scopePoints),
+        defaultPrice: Math.max(0, Number(newTplPrice) || 0),
+        unitType: newTplUnitType.trim() || 'Per Job',
       };
       await addServiceTemplate(payload);
       pushToast({
         type: 'success',
         title: 'Saved to Service Library',
-        description: `${payload.name} is now reusable in future quotations.`,
+        description: `${payload.name} (${stages.length} stage${
+          stages.length === 1 ? '' : 's'
+        }) can now be selected from the dropdown in future quotations.`,
       });
+      setSaveTplModalOpen(false);
     } catch {
       pushToast({
         type: 'error',
         title: 'Save failed',
-        description: 'Could not save service to library.',
+        description: 'Could not save structured scope template.',
       });
+    } finally {
+      setSavingTpl(false);
     }
   };
 
@@ -1138,46 +1226,52 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
           />
         </section>
 
-        {/* SECTION D: DETAILED SCOPE OF WORK (PAGE 2 / PAGE 3) */}
+        {/* SECTION D: STRUCTURED MULTI-STAGE SCOPE OF WORK (PAGE 2 / PAGE 3) */}
         <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 space-y-5">
           <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                 Section D · Appears on Page 2 (Auto-continues to Page 3 if lengthy)
               </p>
-              <h2 className="text-base font-bold text-[#071D36]">Technical Scope of Work</h2>
+              <h2 className="text-base font-bold text-[#071D36]">
+                Structured Scope of Work ({quoteServices.length}{' '}
+                {quoteServices.length === 1 ? 'Stage' : 'Stages'})
+              </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Build numbered scope sections (01, 02, 03...) with individual descriptions,
-                detailed deliverables, and bullet points.
+                Select a service below to load all of its configured structured stages automatically.
+                Add, reorder, or customize any number of stages — editable globally in Company
+                Settings &amp; Service Library.
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={loadStructuredScopePreset}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#071D36] bg-[#F4F6F9] border border-slate-300 hover:bg-slate-200 rounded-lg cursor-pointer whitespace-nowrap"
-            >
-              <Layers className="w-3.5 h-3.5 text-[#071D36]" />
-              Load 4-Stage Structured Scope Sample
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {quoteServices.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={openSaveScopeTemplateModal}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#071D36] bg-[#F4F6F9] border border-slate-300 hover:bg-slate-200 rounded-lg cursor-pointer whitespace-nowrap"
+                  >
+                    <BookmarkPlus className="w-3.5 h-3.5" />
+                    Save Scope as Service Template
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuoteServices([]);
+                      setScopeOverview('');
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer whitespace-nowrap"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear Stages
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Scope Overview Intro */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Scope Overview / Technical Summary (Optional)
-            </label>
-            <textarea
-              rows={2}
-              maxLength={1500}
-              value={scopeOverview}
-              onChange={(e) => setScopeOverview(e.target.value)}
-              placeholder="e.g., Vibration analysis is carried out to evaluate machine vibration levels and identify potential mechanical issues through measurement, signal analysis and engineering assessment."
-              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
-            />
-          </div>
-
-          {/* Service Library Picker + Add Scope Item Button */}
+          {/* Service Selector Dropdown + Add Custom Stage Button */}
           <div className="flex flex-col sm:flex-row gap-2.5">
             <select
               value={selectedLibraryServiceId}
@@ -1186,12 +1280,15 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                 setSelectedLibraryServiceId(id);
                 if (id) addServiceFromLibrary(id);
               }}
-              className="flex-1 px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
+              className="flex-1 px-3.5 py-2.5 text-sm font-medium border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
             >
-              <option value="">+ Add saved template from Service Library...</option>
+              <option value="">
+                Select a Service to load its structured multi-stage scope...
+              </option>
               {serviceLibrary.map((svc) => (
                 <option key={svc.id} value={svc.id}>
-                  {svc.name} ({svc.scopePoints.length} points ·{' '}
+                  {svc.name} ({svc.stages.length}{' '}
+                  {svc.stages.length === 1 ? 'Stage' : 'Stages'} · {svc.unitType} ·{' '}
                   {svc.defaultPrice > 0 ? formatINR(svc.defaultPrice) : 'Custom rate'})
                 </option>
               ))}
@@ -1199,20 +1296,35 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
 
             <button
               type="button"
-              onClick={addCustomService}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#071D36] hover:bg-[#0E2B4D] rounded-lg cursor-pointer whitespace-nowrap"
+              onClick={addCustomStage}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-white bg-[#071D36] hover:bg-[#0E2B4D] rounded-lg cursor-pointer whitespace-nowrap"
             >
               <Plus className="w-4 h-4 text-[#F5B51B]" />
-              Add Scope Item
+              Add Stage
             </button>
           </div>
 
-          {/* Numbered Scope Item Cards */}
+          {/* Scope Overview Intro */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Scope Overview / Technical Summary
+            </label>
+            <textarea
+              rows={2}
+              maxLength={1500}
+              value={scopeOverview}
+              onChange={(e) => setScopeOverview(e.target.value)}
+              placeholder="Auto-filled when you select a service above. Appears directly below the Scope of Work title in the PDF..."
+              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
+            />
+          </div>
+
+          {/* Numbered Structured Scope Stage Cards */}
           {quoteServices.length === 0 ? (
             <div className="border border-dashed border-slate-300 rounded-xl p-8 text-center text-xs text-slate-500">
-              No scope items added yet. Click <strong>Add Scope Item</strong>, select from the{' '}
-              <strong>Service Library</strong>, or click{' '}
-              <strong>Load 4-Stage Structured Scope Sample</strong> above.
+              No scope stages loaded yet. Choose a service from the dropdown above to automatically
+              load all of its structured stages, or click <strong>Add Stage</strong> to build custom
+              stages.
             </div>
           ) : (
             <div className="space-y-4">
@@ -1226,30 +1338,21 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                     {/* Gold left accent matching PDF preview */}
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#F5B51B]" />
 
-                    {/* Scope Card Top Header */}
+                    {/* Scope Stage Card Top Header */}
                     <div className="bg-[#F4F6F9] border-b border-slate-200 pl-5 pr-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <span className="font-mono text-sm font-extrabold text-[#F5B51B] bg-[#071D36] px-2 py-0.5 rounded">
                           {numStr}
                         </span>
                         <span className="text-xs font-bold uppercase tracking-wider text-[#071D36]">
-                          {svc.title || `Scope Item ${numStr}`}
+                          {svc.title || `Stage ${numStr}`}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          title="Save this scope item to Service Library"
-                          onClick={() => void saveCustomServiceToLibrary(svc)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:text-[#071D36] hover:bg-slate-200/70 rounded cursor-pointer"
-                        >
-                          <BookmarkPlus className="w-3.5 h-3.5" />
-                          Save to Library
-                        </button>
-                        <button
-                          type="button"
-                          title="Duplicate scope item"
+                          title="Duplicate stage"
                           onClick={() => duplicateServiceSection(svcIdx)}
                           className="p-1.5 text-slate-500 hover:text-[#071D36] hover:bg-slate-200/70 rounded cursor-pointer"
                         >
@@ -1258,7 +1361,7 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                         <button
                           type="button"
                           disabled={svcIdx === 0}
-                          title="Move up"
+                          title="Move stage up"
                           onClick={() => moveServiceSection(svcIdx, -1)}
                           className="p-1.5 text-slate-500 hover:text-[#071D36] disabled:opacity-30 cursor-pointer"
                         >
@@ -1267,7 +1370,7 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                         <button
                           type="button"
                           disabled={svcIdx === quoteServices.length - 1}
-                          title="Move down"
+                          title="Move stage down"
                           onClick={() => moveServiceSection(svcIdx, 1)}
                           className="p-1.5 text-slate-500 hover:text-[#071D36] disabled:opacity-30 cursor-pointer"
                         >
@@ -1275,7 +1378,7 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                         </button>
                         <button
                           type="button"
-                          title="Delete scope item"
+                          title="Delete stage"
                           onClick={() =>
                             setQuoteServices((prev) => prev.filter((_, i) => i !== svcIdx))
                           }
@@ -1290,7 +1393,7 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Scope Item Heading
+                            Stage Heading
                           </label>
                           <input
                             type="text"
@@ -1307,7 +1410,7 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                         </div>
                         <div className="md:col-span-7">
                           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Scope Item Description (Summary Paragraph)
+                            Stage Summary Paragraph
                           </label>
                           <input
                             type="text"
@@ -1401,6 +1504,16 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
                   </div>
                 );
               })}
+
+              {/* Quick bottom Add Another Stage button */}
+              <button
+                type="button"
+                onClick={addCustomStage}
+                className="w-full py-2.5 border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-[#071D36] hover:bg-[#F4F6F9] hover:border-[#071D36] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-[#F5B51B]" />
+                Add Another Stage (Stage {String(quoteServices.length + 1).padStart(2, '0')})
+              </button>
             </div>
           )}
 
@@ -1922,6 +2035,95 @@ export const CreateQuotationPage: React.FC<CreateQuotationPageProps> = ({
         }}
         onCancel={() => setPendingOverwriteStatus(null)}
       />
+
+      {/* Save Current Multi-Stage Scope as Reusable Service Template Modal */}
+      {saveTplModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#071D36]/55 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full overflow-hidden shadow-xl">
+            <div className="px-5 py-4 bg-[#071D36] text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold">Save Scope as Service Template</h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Saves all {quoteServices.length} stage{quoteServices.length === 1 ? '' : 's'},
+                  overview, deliverables &amp; arrangements to your Service Library.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveTplModalOpen(false)}
+                className="p-1 text-slate-300 hover:text-white rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveCurrentScopeAsTemplate} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Service Template Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={150}
+                  value={newTplName}
+                  onChange={(e) => setNewTplName(e.target.value)}
+                  placeholder="e.g., Comprehensive Vibration & Balancing Package"
+                  className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Default Rate (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newTplPrice}
+                    onChange={(e) => setNewTplPrice(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Default Unit Type
+                  </label>
+                  <input
+                    list="pricing-unit-types"
+                    type="text"
+                    maxLength={50}
+                    value={newTplUnitType}
+                    onChange={(e) => setNewTplUnitType(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F5B51B]"
+                  />
+                </div>
+              </div>
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={savingTpl}
+                  onClick={() => setSaveTplModalOpen(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingTpl}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-[#071D36] hover:bg-[#0E2B4D] rounded-lg cursor-pointer disabled:opacity-60"
+                >
+                  {savingTpl ? 'Saving...' : 'Save Service Template'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

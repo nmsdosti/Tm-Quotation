@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import { ServiceTemplateManager } from '../components/ServiceTemplateManager';
 import { DEFAULT_LOGO_PATH, DEFAULT_TERMS } from '../constants/defaults';
 import { useAppData } from '../context/AppDataContext';
 import { firebaseProjectInfo } from '../lib/firebase';
@@ -96,16 +97,17 @@ export const CompanySettingsPage: React.FC = () => {
   );
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-5xl">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-[#071D36] tracking-tight">Company Settings</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Configure TM Industrial Solution branding, numbering sequence, GST defaults, bank
-            details, and sample terms.
-          </p>
-        </div>
+    <div className="space-y-6 max-w-5xl">
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-[#071D36] tracking-tight">Company Settings</h1>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Configure TM Industrial Solution branding, numbering sequence, GST defaults, bank
+              details, default terms, and structured multi-stage service scopes.
+            </p>
+          </div>
         <button
           type="submit"
           disabled={saving}
@@ -652,6 +654,11 @@ export const CompanySettingsPage: React.FC = () => {
         </div>
       </section>
 
+      </form>
+
+      {/* Structured Multi-Stage Service Scope Templates (Editable directly from Settings) */}
+      <ServiceTemplateManager embedded />
+
       {/* Firebase Cloud Database Info */}
       <section className="bg-white border border-slate-200 rounded-xl p-6">
         <div className="flex items-start gap-3">
@@ -672,6 +679,6 @@ export const CompanySettingsPage: React.FC = () => {
           </div>
         </div>
       </section>
-    </form>
+    </div>
   );
 };

@@ -197,9 +197,18 @@
         },
         "description": {
           "type": "string",
-          "maxLength": 1000
+          "maxLength": 1500
         },
         "scopePoints": {
+          "type": "array"
+        },
+        "stages": {
+          "type": "array"
+        },
+        "deliverables": {
+          "type": "array"
+        },
+        "customerArrangements": {
           "type": "array"
         },
         "defaultPrice": {

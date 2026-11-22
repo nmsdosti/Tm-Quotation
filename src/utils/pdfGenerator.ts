@@ -516,8 +516,8 @@ export async function generateQuotationPdfDoc(
     quotation.services.forEach((svc, idx) => {
       const m = measureScopeCard(svc, useCompactScope);
 
-      // Automatically break to Page 3 (second scope page) when card does not fit on Page 2
-      if (cursorY + m.totalH > maxBodyY && scopePageCount < 2) {
+      // Automatically break to a continuation scope page when a stage card does not fit
+      if (cursorY + m.totalH > maxBodyY) {
         doc.addPage();
         scopePageCount += 1;
         drawContinuationHeader('TECHNICAL SCOPE OF WORK (CONTINUED)');
@@ -600,14 +600,14 @@ export async function generateQuotationPdfDoc(
     const bodyBoxH = Math.max(12, Math.max(delivH, arrH) + 6);
     const totalTableH = 8 + bodyBoxH;
 
-    if (cursorY + totalTableH > maxBodyY && scopePageCount < 2) {
+    if (cursorY + totalTableH > maxBodyY) {
       doc.addPage();
       scopePageCount += 1;
       drawContinuationHeader('TECHNICAL SCOPE OF WORK (CONTINUED)');
       cursorY = 22;
     }
 
-    if (cursorY + totalTableH <= maxBodyY + 4) {
+    if (cursorY + totalTableH <= maxBodyY + 6) {
       const boxTopY = cursorY + 1;
       // Dark Navy header bar split into 2 columns
       doc.setFillColor(...NAVY);

@@ -38,6 +38,7 @@ import {
   Customer,
   Quotation,
   QuotationStatus,
+  ServiceScopeStage,
   ServiceTemplate,
   ToastMessage,
 } from '../types/quotation';
@@ -49,6 +50,55 @@ import {
   getTodayISO,
   truncateString,
 } from '../utils/formatters';
+
+function sanitizeStages(
+  rawStages: ServiceScopeStage[] | undefined,
+  fallbackName: string,
+  fallbackDescription: string,
+  fallbackScopePoints: string[]
+): ServiceScopeStage[] {
+  const cleaned = (Array.isArray(rawStages) ? rawStages : [])
+    .slice(0, 20)
+    .map((st, idx) => ({
+      id: truncateString((st?.id || `stage_${idx + 1}`).toString(), 80),
+      title: truncateString((st?.title || '').trim() || `Stage ${idx + 1}`, 150),
+      description: truncateString((st?.description || '').trim(), 600),
+      scopePoints: (Array.isArray(st?.scopePoints) ? st.scopePoints : [])
+        .map((p) => truncateString(String(p || '').trim(), 500))
+        .filter(Boolean)
+        .slice(0, 30),
+    }))
+    .filter((st) => st.title || st.description || st.scopePoints.length > 0);
+
+  if (cleaned.length > 0) return cleaned;
+
+  const fallbackPts = (Array.isArray(fallbackScopePoints) ? fallbackScopePoints : [])
+    .map((p) => truncateString(String(p || '').trim(), 500))
+    .filter(Boolean)
+    .slice(0, 30);
+
+  return [
+    {
+      id: 'stage_1',
+      title: truncateString(fallbackName.trim() || 'Scope Details', 150),
+      description: truncateString(fallbackDescription.trim(), 600),
+      scopePoints: fallbackPts,
+    },
+  ];
+}
+
+function flattenStagePoints(stages: ServiceScopeStage[]): string[] {
+  return stages
+    .flatMap((st) => st.scopePoints)
+    .map((p) => truncateString(p.trim(), 500))
+    .filter(Boolean)
+    .slice(0, 60);
+}
+
+function findDefaultServiceMatch(name: string) {
+  const normalized = name.trim().toLowerCase();
+  return INITIAL_SERVICE_LIBRARY.find((tpl) => tpl.name.trim().toLowerCase() === normalized);
+}
 
 interface AppDataContextValue {
   user: User | null;
@@ -209,11 +259,21 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const batch = writeBatch(db);
         INITIAL_SERVICE_LIBRARY.forEach((tpl, idx) => {
           const svcId = `svc_core_${idx + 1}_${uid.slice(0, 8)}`.replace(/[^a-zA-Z0-9_-]/g, '');
+          const cleanStages = sanitizeStages(tpl.stages, tpl.name, tpl.description, tpl.scopePoints);
           batch.set(doc(db, 'services', svcId), {
             ownerId: uid,
             name: truncateString(tpl.name, 150),
-            description: truncateString(tpl.description, 1000),
-            scopePoints: tpl.scopePoints.slice(0, 30).map((p) => truncateString(p, 500)),
+            description: truncateString(tpl.description, 1500),
+            stages: cleanStages,
+            deliverables: (tpl.deliverables || [])
+              .map((d) => truncateString(d.trim(), 500))
+              .filter(Boolean)
+              .slice(0, 20),
+            customerArrangements: (tpl.customerArrangements || [])
+              .map((c) => truncateString(c.trim(), 500))
+              .filter(Boolean)
+              .slice(0, 20),
+            scopePoints: flattenStagePoints(cleanStages),
             defaultPrice: tpl.defaultPrice,
             unitType: truncateString(tpl.unitType, 50),
             createdAt: serverTimestamp(),
@@ -221,6 +281,60 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           });
         });
         await batch.commit();
+      } else {
+        // Silently migrate legacy flat service docs (that lack `stages`) to structured stages
+        const migrateBatch = writeBatch(db);
+        let migrateCount = 0;
+        existingSvcs.docs.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (!Array.isArray(d.stages) || d.stages.length === 0) {
+            const matchedDefault = findDefaultServiceMatch(String(d.name || ''));
+            const hydratedStages = matchedDefault
+              ? sanitizeStages(
+                  matchedDefault.stages,
+                  matchedDefault.name,
+                  matchedDefault.description,
+                  matchedDefault.scopePoints
+                )
+              : sanitizeStages(
+                  undefined,
+                  String(d.name || 'Service'),
+                  String(d.description || ''),
+                  Array.isArray(d.scopePoints) ? d.scopePoints : []
+                );
+            const hydratedDeliverables = (
+              Array.isArray(d.deliverables) && d.deliverables.length > 0
+                ? d.deliverables
+                : matchedDefault?.deliverables || []
+            )
+              .map((item: unknown) => truncateString(String(item || '').trim(), 500))
+              .filter(Boolean)
+              .slice(0, 20);
+            const hydratedArrangements = (
+              Array.isArray(d.customerArrangements) && d.customerArrangements.length > 0
+                ? d.customerArrangements
+                : matchedDefault?.customerArrangements || []
+            )
+              .map((item: unknown) => truncateString(String(item || '').trim(), 500))
+              .filter(Boolean)
+              .slice(0, 20);
+            migrateBatch.update(doc(db, 'services', docSnap.id), {
+              description: truncateString(
+                matchedDefault?.description || String(d.description || ''),
+                1500
+              ),
+              stages: hydratedStages,
+              deliverables: hydratedDeliverables,
+              customerArrangements: hydratedArrangements,
+              scopePoints: flattenStagePoints(hydratedStages),
+              updatedAt: serverTimestamp(),
+            });
+            migrateCount += 1;
+          }
+        });
+        if (migrateCount > 0) {
+          await migrateBatch.commit();
+        }
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'services');
@@ -307,12 +421,53 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const list: ServiceTemplate[] = snap.docs
           .map((docSnap) => {
             const d = docSnap.data();
+            const rawName = String(d.name || '');
+            const matchedDefault = findDefaultServiceMatch(rawName);
+            const hasStages = Array.isArray(d.stages) && d.stages.length > 0;
+            const resolvedStages = hasStages
+              ? sanitizeStages(
+                  d.stages as ServiceScopeStage[],
+                  rawName,
+                  String(d.description || ''),
+                  Array.isArray(d.scopePoints) ? d.scopePoints : []
+                )
+              : matchedDefault
+              ? sanitizeStages(
+                  matchedDefault.stages,
+                  matchedDefault.name,
+                  matchedDefault.description,
+                  matchedDefault.scopePoints
+                )
+              : sanitizeStages(
+                  undefined,
+                  rawName,
+                  String(d.description || ''),
+                  Array.isArray(d.scopePoints) ? d.scopePoints : []
+                );
+            const resolvedDeliverables =
+              Array.isArray(d.deliverables) && d.deliverables.length > 0
+                ? d.deliverables.map((x: unknown) => String(x || '')).filter(Boolean)
+                : matchedDefault?.deliverables
+                ? [...matchedDefault.deliverables]
+                : [];
+            const resolvedArrangements =
+              Array.isArray(d.customerArrangements) && d.customerArrangements.length > 0
+                ? d.customerArrangements.map((x: unknown) => String(x || '')).filter(Boolean)
+                : matchedDefault?.customerArrangements
+                ? [...matchedDefault.customerArrangements]
+                : [];
             return {
               id: docSnap.id,
               ownerId: d.ownerId || uid,
-              name: d.name || '',
-              description: d.description || '',
-              scopePoints: Array.isArray(d.scopePoints) ? d.scopePoints : [],
+              name: rawName,
+              description: String(d.description || matchedDefault?.description || ''),
+              stages: resolvedStages,
+              deliverables: resolvedDeliverables,
+              customerArrangements: resolvedArrangements,
+              scopePoints:
+                Array.isArray(d.scopePoints) && d.scopePoints.length > 0
+                  ? d.scopePoints
+                  : flattenStagePoints(resolvedStages),
               defaultPrice: Number(d.defaultPrice) || 0,
               unitType: d.unitType || 'Per Job',
               createdAt: toDate(d.createdAt),
@@ -586,14 +741,27 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     ): Promise<ServiceTemplate> => {
       if (!user) throw new Error('Not authenticated');
       const id = generateSafeId('svc');
+      const cleanName = truncateString(data.name.trim(), 150);
+      const cleanDesc = truncateString(data.description, 1500);
+      const cleanStages = sanitizeStages(data.stages, cleanName, cleanDesc, data.scopePoints || []);
+      const cleanDeliverables = (data.deliverables || [])
+        .map((d) => truncateString(d.trim(), 500))
+        .filter(Boolean)
+        .slice(0, 20);
+      const cleanArrangements = (data.customerArrangements || [])
+        .map((c) => truncateString(c.trim(), 500))
+        .filter(Boolean)
+        .slice(0, 20);
+      const cleanFlatPoints = flattenStagePoints(cleanStages);
+
       const payload = {
         ownerId: user.uid,
-        name: truncateString(data.name.trim(), 150),
-        description: truncateString(data.description, 1000),
-        scopePoints: data.scopePoints
-          .map((p) => truncateString(p.trim(), 500))
-          .filter(Boolean)
-          .slice(0, 30),
+        name: cleanName,
+        description: cleanDesc,
+        stages: cleanStages,
+        deliverables: cleanDeliverables,
+        customerArrangements: cleanArrangements,
+        scopePoints: cleanFlatPoints,
         defaultPrice: Math.max(0, Number(data.defaultPrice) || 0),
         unitType: truncateString(data.unitType.trim() || 'Per Job', 50),
         createdAt: serverTimestamp(),
@@ -607,6 +775,9 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           ownerId: user.uid,
           name: payload.name,
           description: payload.description,
+          stages: payload.stages,
+          deliverables: payload.deliverables,
+          customerArrangements: payload.customerArrangements,
           scopePoints: payload.scopePoints,
           defaultPrice: payload.defaultPrice,
           unitType: payload.unitType,
@@ -628,12 +799,33 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (!user) throw new Error('Not authenticated');
       const patch: Record<string, unknown> = { updatedAt: serverTimestamp() };
       if (data.name !== undefined) patch.name = truncateString(data.name.trim(), 150);
-      if (data.description !== undefined) patch.description = truncateString(data.description, 1000);
-      if (data.scopePoints !== undefined) {
+      if (data.description !== undefined) patch.description = truncateString(data.description, 1500);
+      if (data.stages !== undefined) {
+        const cleanStages = sanitizeStages(
+          data.stages,
+          data.name || 'Service',
+          data.description || '',
+          data.scopePoints || []
+        );
+        patch.stages = cleanStages;
+        patch.scopePoints = flattenStagePoints(cleanStages);
+      } else if (data.scopePoints !== undefined) {
         patch.scopePoints = data.scopePoints
           .map((p) => truncateString(p.trim(), 500))
           .filter(Boolean)
-          .slice(0, 30);
+          .slice(0, 60);
+      }
+      if (data.deliverables !== undefined) {
+        patch.deliverables = data.deliverables
+          .map((d) => truncateString(d.trim(), 500))
+          .filter(Boolean)
+          .slice(0, 20);
+      }
+      if (data.customerArrangements !== undefined) {
+        patch.customerArrangements = data.customerArrangements
+          .map((c) => truncateString(c.trim(), 500))
+          .filter(Boolean)
+          .slice(0, 20);
       }
       if (data.defaultPrice !== undefined) patch.defaultPrice = Math.max(0, Number(data.defaultPrice) || 0);
       if (data.unitType !== undefined) patch.unitType = truncateString(data.unitType.trim() || 'Per Job', 50);

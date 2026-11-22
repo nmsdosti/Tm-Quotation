@@ -69,11 +69,21 @@ export interface CustomerSnapshot {
   state: string;
 }
 
+export interface ServiceScopeStage {
+  id: string;
+  title: string;
+  description: string;
+  scopePoints: string[];
+}
+
 export interface ServiceTemplate {
   id: string;
   ownerId: string;
   name: string;
   description: string;
+  stages: ServiceScopeStage[];
+  deliverables?: string[];
+  customerArrangements?: string[];
   scopePoints: string[];
   defaultPrice: number;
   unitType: string;

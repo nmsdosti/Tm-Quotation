@@ -17,26 +17,32 @@ function splitScopePages(
   hasOverview: boolean,
   hasFooterBox: boolean
 ): QuotationServiceItem[][] {
+  if (services.length === 0) return [[]];
   if (services.length <= 4) {
     const totalPoints = services.reduce((sum, s) => sum + s.scopePoints.length, 0);
     if (totalPoints <= 16) return [services];
   }
-  const page1: QuotationServiceItem[] = [];
-  const page2: QuotationServiceItem[] = [];
+  const pages: QuotationServiceItem[][] = [];
+  let current: QuotationServiceItem[] = [];
   let weight = hasOverview ? 2 : 0;
-  const threshold = hasFooterBox ? 16 : 19;
+  const maxWeightPerPage = hasFooterBox ? 18 : 20;
 
-  services.forEach((svc, idx) => {
+  services.forEach((svc) => {
     const itemWeight = 2 + (svc.description ? 1.5 : 0) + Math.max(1, svc.scopePoints.length);
-    if (idx === 0 || (page2.length === 0 && weight + itemWeight <= threshold)) {
-      page1.push(svc);
-      weight += itemWeight;
+    if (current.length > 0 && weight + itemWeight > maxWeightPerPage) {
+      pages.push(current);
+      current = [svc];
+      weight = itemWeight;
     } else {
-      page2.push(svc);
+      current.push(svc);
+      weight += itemWeight;
     }
   });
 
-  return page2.length > 0 ? [page1, page2] : [page1];
+  if (current.length > 0) {
+    pages.push(current);
+  }
+  return pages;
 }
 
 export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({

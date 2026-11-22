@@ -133,16 +133,32 @@ service cloud.firestore {
         'ownerId', 'name', 'scopePoints', 'defaultPrice', 'unitType', 'createdAt', 'updatedAt'
       ]) &&
       data.keys().hasOnly([
-        'ownerId', 'name', 'description', 'scopePoints', 'defaultPrice',
+        'ownerId', 'name', 'description', 'scopePoints', 'stages',
+        'deliverables', 'customerArrangements', 'defaultPrice',
         'unitType', 'createdAt', 'updatedAt'
       ]) &&
       isValidId(data.ownerId) &&
       data.ownerId == request.auth.uid &&
       isNonEmptyStringWithMax(data.name, 150) &&
-      (!('description' in data) || isStringWithMax(data.description, 1000)) &&
+      (!('description' in data) || isStringWithMax(data.description, 1500)) &&
       data.scopePoints is list &&
-      data.scopePoints.size() <= 30 &&
+      data.scopePoints.size() <= 60 &&
       (data.scopePoints.size() == 0 || isStringWithMax(data.scopePoints[0], 500)) &&
+      (!('stages' in data) || (
+        data.stages is list &&
+        data.stages.size() <= 20 &&
+        (data.stages.size() == 0 || data.stages[0] is map)
+      )) &&
+      (!('deliverables' in data) || (
+        data.deliverables is list &&
+        data.deliverables.size() <= 20 &&
+        (data.deliverables.size() == 0 || isStringWithMax(data.deliverables[0], 500))
+      )) &&
+      (!('customerArrangements' in data) || (
+        data.customerArrangements is list &&
+        data.customerArrangements.size() <= 20 &&
+        (data.customerArrangements.size() == 0 || isStringWithMax(data.customerArrangements[0], 500))
+      )) &&
       isNonNegativeNumber(data.defaultPrice) &&
       isNonEmptyStringWithMax(data.unitType, 50) &&
       data.createdAt is timestamp &&
@@ -328,7 +344,8 @@ service cloud.firestore {
           (
             existing().ownerId == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'description', 'scopePoints', 'defaultPrice', 'unitType', 'updatedAt'
+              'name', 'description', 'scopePoints', 'stages',
+              'deliverables', 'customerArrangements', 'defaultPrice', 'unitType', 'updatedAt'
             ])
           ) ||
           isAdmin()
