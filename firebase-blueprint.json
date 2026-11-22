@@ -1,0 +1,401 @@
+{
+  "entities": {
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Company profile, branding, numbering format, default GST, terms, bank details, and signatory settings for TM Industrial Solution.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "tagline": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "contactPerson": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "designation": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 150
+        },
+        "website": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "googleMapsUrl": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "gstin": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 250000
+        },
+        "defaultGstRate": {
+          "type": "number"
+        },
+        "quotationPrefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "financialYear": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 20
+        },
+        "nextSerialNumber": {
+          "type": "number"
+        },
+        "defaultValidityDays": {
+          "type": "number"
+        },
+        "defaultCompanyIntro": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "defaultTerms": {
+          "type": "array"
+        },
+        "defaultPaymentTerms": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "signatoryName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "signatoryTitle": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "bankDetails": {
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "companyName",
+        "quotationPrefix",
+        "financialYear",
+        "nextSerialNumber",
+        "defaultGstRate",
+        "defaultValidityDays",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Industrial client record saved in the customer database.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "contactPerson": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "designation": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "gstin": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "companyName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ServiceTemplate": {
+      "title": "ServiceTemplate",
+      "description": "Reusable industrial service definition with default scope of work and pricing.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "scopePoints": {
+          "type": "array"
+        },
+        "defaultPrice": {
+          "type": "number"
+        },
+        "unitType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "name",
+        "scopePoints",
+        "defaultPrice",
+        "unitType",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Quotation": {
+      "title": "Quotation",
+      "description": "Saved industrial service quotation with scope of work, commercial offer, GST breakdown, and terms.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "quotationNumber": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "quotationDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "validUntil": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "referenceNumber": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "preparedBy": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Draft",
+            "Sent",
+            "Under Discussion",
+            "Accepted",
+            "Rejected",
+            "Expired"
+          ]
+        },
+        "customerId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "customer": {
+          "type": "object"
+        },
+        "companyIntro": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "scopeOverview": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "services": {
+          "type": "array"
+        },
+        "deliverables": {
+          "type": "array"
+        },
+        "customerArrangements": {
+          "type": "array"
+        },
+        "pricingItems": {
+          "type": "array"
+        },
+        "gstEnabled": {
+          "type": "boolean"
+        },
+        "subtotal": {
+          "type": "number"
+        },
+        "totalGst": {
+          "type": "number"
+        },
+        "grandTotal": {
+          "type": "number"
+        },
+        "advanceAmount": {
+          "type": "number"
+        },
+        "balanceAmount": {
+          "type": "number"
+        },
+        "terms": {
+          "type": "array"
+        },
+        "paymentTerms": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "commercialNotes": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "quotationNumber",
+        "quotationDate",
+        "validUntil",
+        "subject",
+        "status",
+        "customer",
+        "services",
+        "pricingItems",
+        "gstEnabled",
+        "subtotal",
+        "totalGst",
+        "grandTotal",
+        "terms",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin record managed out-of-band.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 150
+        }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/companySettings/{userId}": {
+      "schema": { "$ref": "#/entities/CompanySettings" },
+      "description": "Per-account persistent company configuration and numbering counter."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer directory documents isolated by ownerId."
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/ServiceTemplate" },
+      "description": "Reusable industrial service library documents isolated by ownerId."
+    },
+    "/quotations/{quotationId}": {
+      "schema": { "$ref": "#/entities/Quotation" },
+      "description": "Permanent industrial quotation records isolated by ownerId."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Read-only admin registry used for privileged status overrides."
+    }
+  }
+}

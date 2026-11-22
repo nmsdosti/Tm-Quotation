@@ -1,0 +1,379 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'tmindustrialsolution@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isStringWithMax(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isNonEmptyStringWithMax(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    function isNonNegativeNumber(val) {
+      return (val is int || val is float) && val >= 0;
+    }
+
+    // --- Entity Validation Blueprints ---
+
+    function isValidCompanySettings(data) {
+      return data.keys().hasAll([
+        'ownerId', 'companyName', 'quotationPrefix', 'financialYear',
+        'nextSerialNumber', 'defaultGstRate', 'defaultValidityDays',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'companyName', 'tagline', 'contactPerson', 'designation',
+        'phone', 'email', 'website', 'googleMapsUrl', 'address', 'gstin',
+        'logoUrl', 'defaultGstRate', 'quotationPrefix', 'financialYear',
+        'nextSerialNumber', 'defaultValidityDays', 'defaultCompanyIntro',
+        'defaultTerms', 'defaultPaymentTerms', 'signatoryName',
+        'signatoryTitle', 'bankDetails', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isNonEmptyStringWithMax(data.companyName, 150) &&
+      (!('tagline' in data) || isStringWithMax(data.tagline, 200)) &&
+      (!('contactPerson' in data) || isStringWithMax(data.contactPerson, 120)) &&
+      (!('designation' in data) || isStringWithMax(data.designation, 120)) &&
+      (!('phone' in data) || isStringWithMax(data.phone, 40)) &&
+      (!('email' in data) || isStringWithMax(data.email, 150)) &&
+      (!('website' in data) || isStringWithMax(data.website, 200)) &&
+      (!('googleMapsUrl' in data) || isStringWithMax(data.googleMapsUrl, 300)) &&
+      (!('address' in data) || isStringWithMax(data.address, 500)) &&
+      (!('gstin' in data) || isStringWithMax(data.gstin, 30)) &&
+      (!('logoUrl' in data) || isStringWithMax(data.logoUrl, 250000)) &&
+      isNonNegativeNumber(data.defaultGstRate) && data.defaultGstRate <= 100 &&
+      isNonEmptyStringWithMax(data.quotationPrefix, 20) &&
+      data.financialYear is string && data.financialYear.size() >= 2 && data.financialYear.size() <= 20 &&
+      (data.nextSerialNumber is int && data.nextSerialNumber >= 1 && data.nextSerialNumber <= 999999) &&
+      (data.defaultValidityDays is int && data.defaultValidityDays >= 1 && data.defaultValidityDays <= 365) &&
+      (!('defaultCompanyIntro' in data) || isStringWithMax(data.defaultCompanyIntro, 3000)) &&
+      (!('defaultTerms' in data) || (
+        data.defaultTerms is list &&
+        data.defaultTerms.size() <= 40 &&
+        (data.defaultTerms.size() == 0 || isStringWithMax(data.defaultTerms[0], 500))
+      )) &&
+      (!('defaultPaymentTerms' in data) || isStringWithMax(data.defaultPaymentTerms, 1000)) &&
+      (!('signatoryName' in data) || isStringWithMax(data.signatoryName, 120)) &&
+      (!('signatoryTitle' in data) || isStringWithMax(data.signatoryTitle, 120)) &&
+      (!('bankDetails' in data) || (
+        data.bankDetails is map &&
+        data.bankDetails.keys().hasOnly(['bankName', 'accountName', 'accountNumber', 'ifscCode', 'branch', 'upiId']) &&
+        (!('bankName' in data.bankDetails) || isStringWithMax(data.bankDetails.bankName, 120)) &&
+        (!('accountName' in data.bankDetails) || isStringWithMax(data.bankDetails.accountName, 150)) &&
+        (!('accountNumber' in data.bankDetails) || isStringWithMax(data.bankDetails.accountNumber, 50)) &&
+        (!('ifscCode' in data.bankDetails) || isStringWithMax(data.bankDetails.ifscCode, 30)) &&
+        (!('branch' in data.bankDetails) || isStringWithMax(data.bankDetails.branch, 150)) &&
+        (!('upiId' in data.bankDetails) || isStringWithMax(data.bankDetails.upiId, 100))
+      )) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['ownerId', 'companyName', 'createdAt', 'updatedAt']) &&
+      data.keys().hasOnly([
+        'ownerId', 'companyName', 'address', 'contactPerson', 'designation',
+        'phone', 'email', 'gstin', 'state', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isNonEmptyStringWithMax(data.companyName, 200) &&
+      (!('address' in data) || isStringWithMax(data.address, 500)) &&
+      (!('contactPerson' in data) || isStringWithMax(data.contactPerson, 150)) &&
+      (!('designation' in data) || isStringWithMax(data.designation, 150)) &&
+      (!('phone' in data) || isStringWithMax(data.phone, 40)) &&
+      (!('email' in data) || isStringWithMax(data.email, 150)) &&
+      (!('gstin' in data) || isStringWithMax(data.gstin, 30)) &&
+      (!('state' in data) || isStringWithMax(data.state, 80)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidServiceTemplate(data) {
+      return data.keys().hasAll([
+        'ownerId', 'name', 'scopePoints', 'defaultPrice', 'unitType', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'name', 'description', 'scopePoints', 'defaultPrice',
+        'unitType', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isNonEmptyStringWithMax(data.name, 150) &&
+      (!('description' in data) || isStringWithMax(data.description, 1000)) &&
+      data.scopePoints is list &&
+      data.scopePoints.size() <= 30 &&
+      (data.scopePoints.size() == 0 || isStringWithMax(data.scopePoints[0], 500)) &&
+      isNonNegativeNumber(data.defaultPrice) &&
+      isNonEmptyStringWithMax(data.unitType, 50) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidQuotationStatus(status) {
+      return status in ['Draft', 'Sent', 'Under Discussion', 'Accepted', 'Rejected', 'Expired'];
+    }
+
+    function isValidQuotationCustomer(c) {
+      return c is map &&
+      c.keys().hasAll(['companyName']) &&
+      c.keys().hasOnly(['companyName', 'address', 'contactPerson', 'designation', 'phone', 'email', 'gstin', 'state']) &&
+      isNonEmptyStringWithMax(c.companyName, 200) &&
+      (!('address' in c) || isStringWithMax(c.address, 500)) &&
+      (!('contactPerson' in c) || isStringWithMax(c.contactPerson, 150)) &&
+      (!('designation' in c) || isStringWithMax(c.designation, 150)) &&
+      (!('phone' in c) || isStringWithMax(c.phone, 40)) &&
+      (!('email' in c) || isStringWithMax(c.email, 150)) &&
+      (!('gstin' in c) || isStringWithMax(c.gstin, 30)) &&
+      (!('state' in c) || isStringWithMax(c.state, 80));
+    }
+
+    function isValidQuotation(data) {
+      return data.keys().hasAll([
+        'ownerId', 'quotationNumber', 'quotationDate', 'validUntil',
+        'subject', 'status', 'customer', 'services', 'pricingItems',
+        'gstEnabled', 'subtotal', 'totalGst', 'grandTotal', 'terms',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'quotationNumber', 'quotationDate', 'validUntil',
+        'subject', 'referenceNumber', 'preparedBy', 'status', 'customerId',
+        'customer', 'companyIntro', 'scopeOverview', 'services', 'deliverables',
+        'customerArrangements', 'pricingItems', 'gstEnabled',
+        'subtotal', 'totalGst', 'grandTotal', 'advanceAmount', 'balanceAmount',
+        'terms', 'paymentTerms', 'commercialNotes', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.ownerId) &&
+      data.ownerId == request.auth.uid &&
+      isNonEmptyStringWithMax(data.quotationNumber, 60) &&
+      data.quotationDate is string && data.quotationDate.size() >= 8 && data.quotationDate.size() <= 20 &&
+      data.validUntil is string && data.validUntil.size() >= 8 && data.validUntil.size() <= 20 &&
+      isNonEmptyStringWithMax(data.subject, 300) &&
+      (!('referenceNumber' in data) || isStringWithMax(data.referenceNumber, 100)) &&
+      (!('preparedBy' in data) || isStringWithMax(data.preparedBy, 120)) &&
+      isValidQuotationStatus(data.status) &&
+      (!('customerId' in data) || data.customerId == '' || isValidId(data.customerId)) &&
+      isValidQuotationCustomer(data.customer) &&
+      (!('companyIntro' in data) || isStringWithMax(data.companyIntro, 3000)) &&
+      (!('scopeOverview' in data) || isStringWithMax(data.scopeOverview, 1500)) &&
+      data.services is list &&
+      data.services.size() <= 30 &&
+      (data.services.size() == 0 || data.services[0] is map) &&
+      (!('deliverables' in data) || (
+        data.deliverables is list &&
+        data.deliverables.size() <= 20 &&
+        (data.deliverables.size() == 0 || isStringWithMax(data.deliverables[0], 500))
+      )) &&
+      (!('customerArrangements' in data) || (
+        data.customerArrangements is list &&
+        data.customerArrangements.size() <= 20 &&
+        (data.customerArrangements.size() == 0 || isStringWithMax(data.customerArrangements[0], 500))
+      )) &&
+      data.pricingItems is list &&
+      data.pricingItems.size() <= 50 &&
+      (data.pricingItems.size() == 0 || data.pricingItems[0] is map) &&
+      data.gstEnabled is bool &&
+      isNonNegativeNumber(data.subtotal) &&
+      isNonNegativeNumber(data.totalGst) &&
+      isNonNegativeNumber(data.grandTotal) &&
+      (!('advanceAmount' in data) || isNonNegativeNumber(data.advanceAmount)) &&
+      (!('balanceAmount' in data) || isNonNegativeNumber(data.balanceAmount)) &&
+      data.terms is list &&
+      data.terms.size() <= 40 &&
+      (data.terms.size() == 0 || isStringWithMax(data.terms[0], 500)) &&
+      (!('paymentTerms' in data) || isStringWithMax(data.paymentTerms, 1000)) &&
+      (!('commercialNotes' in data) || isStringWithMax(data.commercialNotes, 1500)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function hasValidCustomerReference(data) {
+      return !('customerId' in data) ||
+        data.customerId == '' ||
+        (
+          exists(/databases/$(database)/documents/customers/$(data.customerId)) &&
+          get(/databases/$(database)/documents/customers/$(data.customerId)).data.ownerId == request.auth.uid
+        );
+    }
+
+    // --- Collection Rules ---
+
+    // Admin registry (read-only self check; never client-writable)
+    match /admins/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list, create, update, delete: if false;
+    }
+
+    // Company Settings (one document per ownerId)
+    match /companySettings/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if false;
+      allow create: if isVerified() &&
+        isValidId(userId) &&
+        request.auth.uid == userId &&
+        isValidCompanySettings(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerified() &&
+        isValidId(userId) &&
+        isValidCompanySettings(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            request.auth.uid == userId &&
+            (
+              // Action 1: Increment quotation serial counter
+              incoming().diff(existing()).affectedKeys().hasOnly(['nextSerialNumber', 'updatedAt']) ||
+              // Action 2: Full company profile & defaults update
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'companyName', 'tagline', 'contactPerson', 'designation',
+                'phone', 'email', 'website', 'googleMapsUrl', 'address', 'gstin',
+                'logoUrl', 'defaultGstRate', 'quotationPrefix', 'financialYear',
+                'nextSerialNumber', 'defaultValidityDays', 'defaultCompanyIntro',
+                'defaultTerms', 'defaultPaymentTerms', 'signatoryName',
+                'signatoryTitle', 'bankDetails', 'updatedAt'
+              ])
+            )
+          ) ||
+          isAdmin()
+        );
+      allow delete: if false;
+    }
+
+    // Customers (PII isolated by ownerId)
+    match /customers/{customerId} {
+      allow get: if isSignedIn() && isValidId(customerId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isVerified() &&
+        isValidId(customerId) &&
+        isValidCustomer(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerified() &&
+        isValidId(customerId) &&
+        isValidCustomer(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'companyName', 'address', 'contactPerson', 'designation',
+              'phone', 'email', 'gstin', 'state', 'updatedAt'
+            ])
+          ) ||
+          isAdmin()
+        );
+      allow delete: if isVerified() && isValidId(customerId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // Service Library
+    match /services/{serviceId} {
+      allow get: if isSignedIn() && isValidId(serviceId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isVerified() &&
+        isValidId(serviceId) &&
+        isValidServiceTemplate(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerified() &&
+        isValidId(serviceId) &&
+        isValidServiceTemplate(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'scopePoints', 'defaultPrice', 'unitType', 'updatedAt'
+            ])
+          ) ||
+          isAdmin()
+        );
+      allow delete: if isVerified() && isValidId(serviceId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // Quotations
+    match /quotations/{quotationId} {
+      allow get: if isSignedIn() && isValidId(quotationId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isVerified() &&
+        isValidId(quotationId) &&
+        isValidQuotation(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        hasValidCustomerReference(incoming());
+      allow update: if isVerified() &&
+        isValidId(quotationId) &&
+        isValidQuotation(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            existing().ownerId == request.auth.uid &&
+            !(existing().status in ['Accepted', 'Rejected']) &&
+            (
+              // Action 1: Status Update
+              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+              // Action 2: Full Quotation Edit (non-terminal quotations)
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'quotationNumber', 'quotationDate', 'validUntil', 'subject',
+                'referenceNumber', 'preparedBy', 'status', 'customerId',
+                'customer', 'companyIntro', 'scopeOverview', 'services',
+                'deliverables', 'customerArrangements', 'pricingItems',
+                'gstEnabled', 'subtotal', 'totalGst', 'grandTotal',
+                'advanceAmount', 'balanceAmount', 'terms', 'paymentTerms',
+                'commercialNotes', 'updatedAt'
+              ])
+            )
+          ) ||
+          isAdmin()
+        );
+      allow delete: if isVerified() && isValidId(quotationId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}
